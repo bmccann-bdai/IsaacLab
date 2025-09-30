@@ -116,6 +116,9 @@ class ActuatorBase(ABC):
         viscous_friction: torch.Tensor | float = 0.0,
         effort_limit: torch.Tensor | float = torch.inf,
         velocity_limit: torch.Tensor | float = torch.inf,
+        pe_velocity_dependent_resistance: torch.Tensor | float | None = None,
+        pe_max_actuator_velocity: torch.Tensor | float | None = None,
+        pe_speed_effort_gradient: torch.Tensor | float | None = None,
     ):
         """Initialize the actuator.
 
@@ -148,6 +151,12 @@ class ActuatorBase(ABC):
             effort_limit: The default effort limit. Defaults to infinity.
                 If a tensor, then the shape is (num_envs, num_joints).
             velocity_limit: The default velocity limit. Defaults to infinity.
+                If a tensor, then the shape is (num_envs, num_joints).
+            pe_velocity_dependent_resistance: Performance Envelope velocity dependent resistance.
+                If a tensor, then the shape is (num_envs, num_joints).
+            pe_max_actuator_velocity: Performance Envelope max actuator velocity.
+                If a tensor, then the shape is (num_envs, num_joints).
+            pe_speed_effort_gradient: Performance Envelope speed effort gradient.
                 If a tensor, then the shape is (num_envs, num_joints).
         """
         # save parameters
@@ -197,6 +206,11 @@ class ActuatorBase(ABC):
 
         self.velocity_limit = self._parse_joint_parameter(self.cfg.velocity_limit, self.velocity_limit_sim)
         self.effort_limit = self._parse_joint_parameter(self.cfg.effort_limit, self.effort_limit_sim)
+        self.pe_velocity_dependent_resistance = self._parse_joint_parameter(
+            self.cfg.perf_envelope.velocity_dependent_resistance, 0.0
+        )
+        self.pe_speed_effort_gradient = self._parse_joint_parameter(self.cfg.perf_envelope.speed_effort_gradient, 0.0)
+        self.pe_max_actuator_velocity = self._parse_joint_parameter(self.cfg.perf_envelope.max_actuator_velocity, 0.0)
 
         # create commands buffers for allocation
         self.computed_effort = torch.zeros(self._num_envs, self.num_joints, device=self._device)

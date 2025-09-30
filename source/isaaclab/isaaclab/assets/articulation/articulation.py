@@ -328,7 +328,6 @@ class Articulation(AssetBase):
 
     def write_root_com_state_to_sim(self, root_state: torch.Tensor, env_ids: Sequence[int] | None = None):
         """Set the root center of mass state over selected environment indices into the simulation.
-
         The root state comprises of the cartesian position, quaternion orientation in (w, x, y, z), and linear
         and angular velocity. All the quantities are in the simulation frame.
 
@@ -792,6 +791,46 @@ class Articulation(AssetBase):
         self._data.joint_effort_limits[env_ids, joint_ids] = limits
         # set into simulation
         self.root_physx_view.set_dof_max_forces(self._data.joint_effort_limits.cpu(), indices=physx_env_ids.cpu())
+
+    def write_performance_envelope_properties_to_sim(
+        self,
+        drive_params: torch.Tensor | tuple[float, float, float] | None = None,
+        joint_ids: Sequence[int] | slice | None = None,
+        env_ids: Sequence[int] | None = None,
+    ):
+        """Write parameters (in additional to max forces) necessary to model motor performance envelopes.
+
+        Additional parameters can be provided to improve sim-to-real transfer by more accurately modeling the motor drive's
+        performance envelope. Specifically, we define linear constraints on the torque-speed boundary and the speed-torque
+        boundary by defining a speed-effort grandient, maximum actuator velocity, and velocity dependent resistance for each
+        motor in the articulation. See: https://docs.omniverse.nvidia.com/kit/docs/omni_physics/107.3/_downloads/f44e831b7f29e7c2ec8e3f2c54418430/drivePerformanceEnvelope.pdf
+
+        Args:
+            drive_params: The drive parameters. Shape is (len(env_ids), len(joint_ids), 3). The final three dimensions
+                          reflect the speed-effort gradient, max actuator velocity, and velocity dependent resistance
+                          respectively.
+            joint_ids: The joint indices to set the joint torque limits for. Defaults to None (all joints).
+            env_ids: The environment indices to set the joint torque limits for. Defaults to None (all environments).
+        """
+        # resolve indices
+        physx_env_ids = env_ids
+        if env_ids is None:
+            env_ids = slice(None)
+            physx_env_ids = self._ALL_INDICES
+        if joint_ids is None:
+            joint_ids = slice(None)
+        # broadcast env_ids if needed to allow double indexing
+        if env_ids != slice(None) and joint_ids != slice(None):
+            env_ids = env_ids[:, None]
+        # move tensor to cpu if needed
+        if isinstance(drive_params, torch.Tensor):
+            drive_params = drive_params.to(self.device)
+        # set into internal buffers
+        self._data.joint_performance_envelope_parameters[env_ids, joint_ids] = drive_params
+        # set into simulation
+        self.root_physx_view.set_dof_drive_model_properties(
+            self._data.joint_performance_envelope_parameters.cpu(), indices=physx_env_ids.cpu()
+        )
 
     def write_joint_armature_to_sim(
         self,
@@ -1562,6 +1601,12 @@ class Articulation(AssetBase):
         self._data.joint_pos_limits = self._data.default_joint_pos_limits.clone()
         self._data.joint_vel_limits = self.root_physx_view.get_dof_max_velocities().to(self.device).clone()
         self._data.joint_effort_limits = self.root_physx_view.get_dof_max_forces().to(self.device).clone()
+
+        if int(get_version()[2]) < 5:
+            self._data.joint_performance_envelope_parameters = (
+                self.root_physx_view.get_dof_drive_model_properties().to(self.device).clone()
+            )
+
         self._data.joint_stiffness = self._data.default_joint_stiffness.clone()
         self._data.joint_damping = self._data.default_joint_damping.clone()
         self._data.joint_armature = self._data.default_joint_armature.clone()
@@ -1715,6 +1760,11 @@ class Articulation(AssetBase):
                 )
                 self.write_joint_viscous_friction_coefficient_to_sim(
                     actuator.viscous_friction, joint_ids=actuator.joint_indices
+                )
+                self.write_performance_envelope_properties_to_sim(
+                    actuator.perf_envelope.speed_effort_gradient,
+                    actuator.perf_envelope.max_actuator_velocity,
+                    actuator.perf_envelope.velocity_dependent_resistance,
                 )
 
             # Store the configured values from the actuator model
