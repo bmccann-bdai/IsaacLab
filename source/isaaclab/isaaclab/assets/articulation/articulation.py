@@ -792,13 +792,13 @@ class Articulation(AssetBase):
         # set into simulation
         self.root_physx_view.set_dof_max_forces(self._data.joint_effort_limits.cpu(), indices=physx_env_ids.cpu())
 
-    def write_performance_envelope_properties_to_sim(
+    def write_drive_model_properties_to_sim(
         self,
         drive_params: torch.Tensor | tuple[float, float, float] | None = None,
         joint_ids: Sequence[int] | slice | None = None,
         env_ids: Sequence[int] | None = None,
     ):
-        """Write parameters (in additional to max forces) necessary to model motor performance envelopes.
+        """Write parameters (in additional to max forces) necessary to model motor drive performance envelopes.
 
         Additional parameters can be provided to improve sim-to-real transfer by more accurately modeling the motor drive's
         performance envelope. Specifically, we define linear constraints on the torque-speed boundary and the speed-torque
@@ -826,10 +826,10 @@ class Articulation(AssetBase):
         if isinstance(drive_params, torch.Tensor):
             drive_params = drive_params.to(self.device)
         # set into internal buffers
-        self._data.joint_performance_envelope_parameters[env_ids, joint_ids] = drive_params
+        self._data.joint_drive_model_parameters[env_ids, joint_ids] = drive_params
         # set into simulation
         self.root_physx_view.set_dof_drive_model_properties(
-            self._data.joint_performance_envelope_parameters.cpu(), indices=physx_env_ids.cpu()
+            self._data.joint_drive_model_parameters.cpu(), indices=physx_env_ids.cpu()
         )
 
     def write_joint_armature_to_sim(
@@ -1635,7 +1635,7 @@ class Articulation(AssetBase):
         self._data.joint_effort_limits = self.root_physx_view.get_dof_max_forces().to(self.device).clone()
 
         if int(get_version()[2]) < 5:
-            self._data.joint_performance_envelope_parameters = (
+            self._data.joint_drive_model_parameters = (
                 self.root_physx_view.get_dof_drive_model_properties().to(self.device).clone()
             )
 
@@ -1760,6 +1760,9 @@ class Articulation(AssetBase):
                 viscous_friction=self._data.default_joint_viscous_friction_coeff[:, joint_ids],
                 effort_limit=self._data.joint_effort_limits[:, joint_ids],
                 velocity_limit=self._data.joint_vel_limits[:, joint_ids],
+                dm_speed_effort_gradient=self._data.joint_drive_model_parameters[:, joint_ids, 0],
+                dm_max_actuator_velocity=self._data.joint_drive_model_parameters[:, joint_ids, 1],
+                dm_velocity_dependent_resistance=self._data.joint_drive_model_parameters[:, joint_ids, 2],
             )
             # log information on actuator groups
             model_type = "implicit" if actuator.is_implicit_model else "explicit"
@@ -1793,10 +1796,10 @@ class Articulation(AssetBase):
                 self.write_joint_viscous_friction_coefficient_to_sim(
                     actuator.viscous_friction, joint_ids=actuator.joint_indices
                 )
-                self.write_performance_envelope_properties_to_sim(
-                    actuator.perf_envelope.speed_effort_gradient,
-                    actuator.perf_envelope.max_actuator_velocity,
-                    actuator.perf_envelope.velocity_dependent_resistance,
+                self.write_drive_model_properties_to_sim(
+                    actuator.dm_speed_effort_gradient,
+                    actuator.dm_max_actuator_velocity,
+                    actuator.dm_velocity_dependent_resistance,
                 )
 
             # Store the configured values from the actuator model

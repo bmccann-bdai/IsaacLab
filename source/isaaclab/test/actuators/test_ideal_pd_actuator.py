@@ -270,5 +270,84 @@ def test_ideal_pd_compute(num_envs, num_joints, device, effort_lim):
     )
 
 
+@pytest.mark.parametrize("num_envs", [1, 2])
+@pytest.mark.parametrize("num_joints", [1, 2])
+@pytest.mark.parametrize("device", ["cuda:0", "cpu"])
+@pytest.mark.parametrize("effort_lim", [None, 300])
+@pytest.mark.parametrize("dm_speed_effort_gradient", [None, 100])
+@pytest.mark.parametrize("dm_max_actuator_velocity", [None, 200])
+@pytest.mark.parametrize("dm_velocity_dependent_resistance", [None, 0.1])
+def test_ideal_drive_model_parameters(
+    num_envs,
+    num_joints,
+    device,
+    effort_lim,
+    dm_velocity_dependent_resistance,
+    dm_max_actuator_velocity,
+    dm_speed_effort_gradient,
+):
+    """Test the computation of the ideal pd actuator."""
+
+    joint_names = [f"joint_{d}" for d in range(num_joints)]
+    joint_ids = [d for d in range(num_joints)]
+    stiffness = 200
+    damping = 10
+    actuator_cfg = IdealPDActuatorCfg(
+        joint_names_expr=joint_names,
+        stiffness=stiffness,
+        damping=damping,
+        effort_limit=effort_lim,
+        dm_velocity_dependent_resistance=dm_velocity_dependent_resistance,
+        dm_max_actuator_velocity=dm_max_actuator_velocity,
+        dm_speed_effort_gradient=dm_speed_effort_gradient,
+    )
+
+    actuator = actuator_cfg.class_type(
+        actuator_cfg,
+        joint_names=joint_names,
+        joint_ids=joint_ids,
+        num_envs=num_envs,
+        device=device,
+        stiffness=actuator_cfg.stiffness,
+        damping=actuator_cfg.damping,
+    )
+    desired_pos = 10.0
+    desired_vel = 0.1
+    measured_joint_pos = 1.0
+    measured_joint_vel = -0.1
+
+    desired_control_action = ArticulationActions()
+    desired_control_action.joint_positions = desired_pos * torch.ones(num_envs, num_joints, device=device)
+    desired_control_action.joint_velocities = desired_vel * torch.ones(num_envs, num_joints, device=device)
+    desired_control_action.joint_efforts = torch.zeros(num_envs, num_joints, device=device)
+
+    expected_comp_joint_effort = stiffness * (desired_pos - measured_joint_pos) + damping * (
+        desired_vel - measured_joint_vel
+    )
+
+    computed_control_action = actuator.compute(
+        desired_control_action,
+        measured_joint_pos * torch.ones(num_envs, num_joints, device=device),
+        measured_joint_vel * torch.ones(num_envs, num_joints, device=device),
+    )
+
+    torch.testing.assert_close(
+        expected_comp_joint_effort * torch.ones(num_envs, num_joints, device=device), actuator.computed_effort
+    )
+
+    if effort_lim is None:
+        torch.testing.assert_close(
+            expected_comp_joint_effort * torch.ones(num_envs, num_joints, device=device), actuator.applied_effort
+        )
+    else:
+        torch.testing.assert_close(
+            effort_lim * torch.ones(num_envs, num_joints, device=device), actuator.applied_effort
+        )
+    torch.testing.assert_close(
+        actuator.applied_effort,
+        computed_control_action.joint_efforts,
+    )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--maxfail=1"])

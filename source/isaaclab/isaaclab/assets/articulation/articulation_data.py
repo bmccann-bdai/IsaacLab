@@ -367,8 +367,8 @@ class ArticulationData:
     joint_effort_limits: torch.Tensor = None
     """Joint maximum effort provided to the simulation. Shape is (num_instances, num_joints)."""
 
-    joint_performance_envelope_parameters = None
-    """Joint performance envelope parameters provided to the simulation. Shape is (num_instances, num_joints, 3)."""
+    joint_drive_model_parameters = None
+    """Joint drive model parameters provided to the simulation. Shape is (num_instances, num_joints, 3)."""
 
     ##
     # Joint properties - Custom.

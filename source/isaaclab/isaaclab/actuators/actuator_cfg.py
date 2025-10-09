@@ -53,23 +53,19 @@ class ActuatorBaseCfg:
 
     """
 
-    @configclass
-    class PerformanceEnvelopeCfg:
-        """Settings to model the drive performance envelope capturing velocity dependence.
+    """Optional (min v5) settings to the drive model capturing performance envelope velocity-effort dependence.
 
-        See: https://docs.omniverse.nvidia.com/kit/docs/omni_physics/107.3/_downloads/f44e831b7f29e7c2ec8e3f2c54418430/drivePerformanceEnvelope.pdf
-        """
+    See: https://docs.omniverse.nvidia.com/kit/docs/omni_physics/107.3/_downloads/f44e831b7f29e7c2ec8e3f2c54418430/drivePerformanceEnvelope.pdf
+    """
 
-        # velocity dependent resistance defined in Nm/(rad/s)
-        velocity_dependent_resistance: dict[str, float] | float | None
+    # velocity dependent resistance defined in Nm/(rad/s)
+    dm_velocity_dependent_resistance: dict[str, float] | float | None = None
 
-        # max actuator velocity defined in rad/s (This is a distinct mechanism from the velocity limits defined below)
-        max_actuator_velocity: dict[str, float] | float | None
+    # max actuator velocity defined in rad/s (This is a distinct mechanism from the velocity limits defined below)
+    dm_max_actuator_velocity: dict[str, float] | float | None = None
 
-        # speed effort gradient defined in (rad/s)/Nm
-        speed_effort_gradient: dict[str, float] | float | None
-
-    perf_envelope: PerformanceEnvelopeCfg
+    # speed effort gradient defined in (rad/s)/Nm
+    dm_speed_effort_gradient: dict[str, float] | float | None = None
 
     velocity_limit: dict[str, float] | float | None = None
     """Velocity limit of the joints in the group. Defaults to None.
