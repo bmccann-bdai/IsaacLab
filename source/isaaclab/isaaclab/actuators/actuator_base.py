@@ -8,13 +8,12 @@ from __future__ import annotations
 import torch
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
 import isaaclab.utils.string as string_utils
 from isaaclab.utils.types import ArticulationActions
 
-if TYPE_CHECKING:
-    from .actuator_cfg import ActuatorBaseCfg
+from .actuator_base_cfg import ActuatorBaseCfg
 
 
 class ActuatorBase(ABC):
@@ -76,6 +75,11 @@ class ActuatorBase(ABC):
     For implicit actuators, the :attr:`velocity_limit` and :attr:`velocity_limit_sim` are the same.
     """
 
+    drive_model: torch.Tensor
+    """A tuple for each joint/env defining the speed_effort_gradient, maximum actuator velocity, and
+    velocity_dependent_resistance which define velocity and effort dependent constraints on the motor's performance.
+    This feature is only implemented in IsaacSim v5.0. Shape is (num_envs, num_joints, 3)."""
+
     stiffness: torch.Tensor
     """The stiffness (P gain) of the PD controller. Shape is (num_envs, num_joints)."""
 
@@ -116,9 +120,7 @@ class ActuatorBase(ABC):
         viscous_friction: torch.Tensor | float = 0.0,
         effort_limit: torch.Tensor | float = torch.inf,
         velocity_limit: torch.Tensor | float = torch.inf,
-        dm_velocity_dependent_resistance: torch.Tensor | float = 0.0,
-        dm_max_actuator_velocity: torch.Tensor | float = 0.0,
-        dm_speed_effort_gradient: torch.Tensor | float = 0.0,
+        drive_model: torch.Tensor | tuple[float, float, float] = ActuatorBaseCfg.DriveModelCfg(),
     ):
         """Initialize the actuator.
 
@@ -152,12 +154,9 @@ class ActuatorBase(ABC):
                 If a tensor, then the shape is (num_envs, num_joints).
             velocity_limit: The default velocity limit. Defaults to infinity.
                 If a tensor, then the shape is (num_envs, num_joints).
-            dm_velocity_dependent_resistance: Drive Model velocity dependent resistance.
-                If a tensor, then the shape is (num_envs, num_joints).
-            dm_max_actuator_velocity: Drive Model max actuator velocity.
-                If a tensor, then the shape is (num_envs, num_joints).
-            dm_speed_effort_gradient: Drive Model speed effort gradient.
-                If a tensor, then the shape is (num_envs, num_joints).
+            drive_model: Drive model for the actuator including speed_effort_gradient, max_actuator_velocity, and
+                velocity_dependent_resistance in that order. Defaults to (0.0, torch.inf, 0.0).
+                If a tensor then the shape is (num_envs, num_joints, 3).
         """
         # save parameters
         self.cfg = cfg
@@ -185,13 +184,17 @@ class ActuatorBase(ABC):
             ("friction", friction),
             ("dynamic_friction", dynamic_friction),
             ("viscous_friction", viscous_friction),
-            ("dm_velocity_dependent_resistance", dm_velocity_dependent_resistance),
-            ("dm_max_actuator_velocity", dm_max_actuator_velocity),
-            ("dm_speed_effort_gradient", dm_speed_effort_gradient),
+            ("drive_model", drive_model, 3),
         ]
-        for param_name, usd_val in to_check:
+        for param_name, usd_val, *tuple_len in to_check:
+            # check if the parameter requires a tuple or a single float
+            if len(tuple_len) > 0:
+                shape = (self.num_envs, self.num_joints, tuple_len[0])
+            else:
+                shape = (self.num_envs, self.num_joints)
+
             cfg_val = getattr(self.cfg, param_name)
-            setattr(self, param_name, self._parse_joint_parameter(cfg_val, usd_val))
+            setattr(self, param_name, self._parse_joint_parameter(cfg_val, usd_val, shape, param_name=param_name))
             new_val = getattr(self, param_name)
 
             allclose = (
@@ -207,11 +210,15 @@ class ActuatorBase(ABC):
                     actuator_param=param_name,
                 )
 
-        self.velocity_limit = self._parse_joint_parameter(self.cfg.velocity_limit, self.velocity_limit_sim)
-        self.effort_limit = self._parse_joint_parameter(self.cfg.effort_limit, self.effort_limit_sim)
+        self.velocity_limit = self._parse_joint_parameter(
+            self.cfg.velocity_limit, self.velocity_limit_sim, param_name="velocity_limit"
+        )
+        self.effort_limit = self._parse_joint_parameter(
+            self.cfg.effort_limit, self.effort_limit_sim, param_name="effort_limit"
+        )
 
         # create commands buffers for allocation
-        self.computed_effort = torch.zeros(self._num_envs, self.num_joints, device=self._device)
+        self.computed_effort = torch.zeros(self.num_envs, self.num_joints, device=self._device)
         self.applied_effort = torch.zeros_like(self.computed_effort)
 
     def __str__(self) -> str:
@@ -305,7 +312,12 @@ class ActuatorBase(ABC):
             table.append([name, int(ids[idx]), default_usd_val, cfg_val_log, applied_val_log])
 
     def _parse_joint_parameter(
-        self, cfg_value: float | dict[str, float] | None, default_value: float | torch.Tensor | None
+        self,
+        cfg_value: tuple[float, ...] | dict[str, tuple[float, ...]] | float | dict[str, float] | None,
+        default_value: tuple[float, ...] | float | torch.Tensor | None,
+        expected_shape: tuple[int, ...] | None = None,
+        *,
+        param_name: str = "No name specified",
     ) -> torch.Tensor:
         """Parse the joint parameter from the configuration.
 
@@ -313,6 +325,10 @@ class ActuatorBase(ABC):
             cfg_value: The parameter value from the configuration. If None, then use the default value.
             default_value: The default value to use if the parameter is None. If it is also None,
                 then an error is raised.
+            expected_shape: The expected shape for the tensor buffer. Usually defaults to (num_envs, num_joints).
+
+        Kwargs:
+            param_name: a string with the parameter name. (Optional used only in exception messages).
 
         Returns:
             The parsed parameter value.
@@ -321,38 +337,90 @@ class ActuatorBase(ABC):
             TypeError: If the parameter value is not of the expected type.
             TypeError: If the default value is not of the expected type.
             ValueError: If the parameter value is None and no default value is provided.
-            ValueError: If the default value tensor is the wrong shape.
+            ValueError: If a tensor or tuple is the wrong shape.
         """
+        if expected_shape is None:
+            expected_shape = (self.num_envs, self.num_joints)
         # create parameter buffer
-        param = torch.zeros(self._num_envs, self.num_joints, device=self._device)
+        param = torch.zeros(*expected_shape, device=self._device)
+
         # parse the parameter
         if cfg_value is not None:
             if isinstance(cfg_value, (float, int)):
                 # if float, then use the same value for all joints
                 param[:] = float(cfg_value)
+            elif isinstance(cfg_value, tuple):
+                # if tuple, ensure we expect a tuple for this parameter
+                if len(expected_shape) < 3:
+                    raise TypeError(
+                        f"Invalid type for parameter value: {type(cfg_value)} for parameter {param_name}"
+                        + f"actuator on joints {self.joint_names}. Expected float or dict, got tuple"
+                    )
+                # ensure the tuple is the correct length, and assign to the last tensor dimensions across all joints
+                if len(cfg_value) is expected_shape[2]:
+                    for i, v in enumerate(cfg_value):
+                        param[:, :, i] = float(v)
+                else:
+                    raise ValueError(
+                        f"Invalid tuple length for parameter {param_name}, got {len(cfg_value)}, expected"
+                        + f" {expected_shape[2]}"
+                    )
             elif isinstance(cfg_value, dict):
                 # if dict, then parse the regular expression
+                # has this ever been called? Too many values to unpack?
                 indices, _, values = string_utils.resolve_matching_names_values(cfg_value, self.joint_names)
-                # note: need to specify type to be safe (e.g. values are ints, but we want floats)
-                param[:, indices] = torch.tensor(values, dtype=torch.float, device=self._device)
+                # if the expected shape has two dimensions, we expect floats
+                if len(expected_shape) < 3:
+                    # note: need to specify type to be safe (e.g. values are ints, but we want floats)
+                    param[:, indices] = torch.tensor(values, dtype=torch.float, device=self._device)
+                # otherwise, we expect tuples
+                else:
+                    # We can't directly assign tuples to tensors, so iterate through them
+                    for i, v in enumerate(values):
+                        # Raise an exception if the tuple is the incorrect length
+                        if len(v) is not expected_shape[2]:
+                            raise ValueError(
+                                f"Invalid tuple length for parameter {param_name} on joint {_[i]} at index"
+                                f" {indices[i]},"
+                                + f" expected {expected_shape[2]} got {len(v)}."
+                            )
+                        # Otherwise iterate through the tuple, and assign the values in order.
+                        for i2, v2 in enumerate(v):
+                            param[:, indices[i], i2] = float(v2)
             else:
                 raise TypeError(
                     f"Invalid type for parameter value: {type(cfg_value)} for "
-                    + f"actuator on joints {self.joint_names}. Expected float or dict."
+                    + f"actuator on joints {self.joint_names}. Expected tuple, float or dict."
                 )
         elif default_value is not None:
             if isinstance(default_value, (float, int)):
                 # if float, then use the same value for all joints
                 param[:] = float(default_value)
+            elif isinstance(default_value, tuple):
+                # if tuple, ensure we expect a tuple for this parameter
+                if len(expected_shape) < 3:
+                    raise TypeError(
+                        f"Invalid default type for parameter value: {type(default_value)} for "
+                        + f"actuator on joints {self.joint_names}. Expected float or dict, got tuple"
+                    )
+                # ensure the tuple is the correct length, and assign to the last tensor dimensions across all joints
+                if len(default_value) is expected_shape[2]:
+                    for i, v in enumerate(default_value):
+                        param[:, :, i] = float(v)
+                else:
+                    raise ValueError(
+                        f"Invalid tuple length for parameter {param_name}, got {len(default_value)}, expected"
+                        + f" {expected_shape[2]}"
+                    )
             elif isinstance(default_value, torch.Tensor):
                 # if tensor, then use the same tensor for all joints
-                if default_value.shape == (self._num_envs, self.num_joints):
+                if default_value.shape is expected_shape:
                     param = default_value.float()
                 else:
                     raise ValueError(
                         "Invalid default value tensor shape.\n"
-                        f"Got: {default_value.shape}\n"
-                        f"Expected: {(self._num_envs, self.num_joints)}"
+                        + f"Got: {default_value.shape}\n"
+                        + f"Expected: {expected_shape}"
                     )
             else:
                 raise TypeError(

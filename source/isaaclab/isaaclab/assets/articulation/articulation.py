@@ -1760,9 +1760,6 @@ class Articulation(AssetBase):
                 viscous_friction=self._data.default_joint_viscous_friction_coeff[:, joint_ids],
                 effort_limit=self._data.joint_effort_limits[:, joint_ids],
                 velocity_limit=self._data.joint_vel_limits[:, joint_ids],
-                dm_speed_effort_gradient=self._data.joint_drive_model_parameters[:, joint_ids, 0],
-                dm_max_actuator_velocity=self._data.joint_drive_model_parameters[:, joint_ids, 1],
-                dm_velocity_dependent_resistance=self._data.joint_drive_model_parameters[:, joint_ids, 2],
             )
             # log information on actuator groups
             model_type = "implicit" if actuator.is_implicit_model else "explicit"

@@ -3,21 +3,18 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from collections.abc import Iterable
 from dataclasses import MISSING
-from typing import Literal
+from torch import inf
+from typing import NamedTuple
 
 from isaaclab.utils import configclass
-
-from . import actuator_net, actuator_pd
-from .actuator_base import ActuatorBase
 
 
 @configclass
 class ActuatorBaseCfg:
     """Configuration for default actuators in an articulation."""
 
-    class_type: type[ActuatorBase] = MISSING
+    class_type: type = MISSING
     """The associated actuator class.
 
     The class should inherit from :class:`isaaclab.actuators.ActuatorBase`.
@@ -58,14 +55,12 @@ class ActuatorBaseCfg:
     See: https://docs.omniverse.nvidia.com/kit/docs/omni_physics/107.3/_downloads/f44e831b7f29e7c2ec8e3f2c54418430/drivePerformanceEnvelope.pdf
     """
 
-    # velocity dependent resistance defined in Nm/(rad/s)
-    dm_velocity_dependent_resistance: dict[str, float] | float | None = None
+    class DriveModelCfg(NamedTuple):
+        speed_effort_gradient: float = 0.0
+        max_actuator_velocity: float = inf
+        velocity_dependent_resistance: float = 0.0
 
-    # max actuator velocity defined in rad/s (This is a distinct mechanism from the velocity limits defined below)
-    dm_max_actuator_velocity: dict[str, float] | float | None = None
-
-    # speed effort gradient defined in (rad/s)/Nm
-    dm_speed_effort_gradient: dict[str, float] | float | None = None
+    drive_model: dict[str, DriveModelCfg] | DriveModelCfg | None = None
 
     velocity_limit: dict[str, float] | float | None = None
     """Velocity limit of the joints in the group. Defaults to None.
@@ -175,125 +170,4 @@ class ActuatorBaseCfg:
 
     viscous_friction: dict[str, float] | float | None = None
     """The viscous friction coefficient of the joints in the group. Defaults to None.
-    """
-
-
-"""
-Implicit Actuator Models.
-"""
-
-
-@configclass
-class ImplicitActuatorCfg(ActuatorBaseCfg):
-    """Configuration for an implicit actuator.
-
-    Note:
-        The PD control is handled implicitly by the simulation.
-    """
-
-    class_type: type = actuator_pd.ImplicitActuator
-
-
-"""
-Explicit Actuator Models.
-"""
-
-
-@configclass
-class IdealPDActuatorCfg(ActuatorBaseCfg):
-    """Configuration for an ideal PD actuator."""
-
-    class_type: type = actuator_pd.IdealPDActuator
-
-
-@configclass
-class DCMotorCfg(IdealPDActuatorCfg):
-    """Configuration for direct control (DC) motor actuator model."""
-
-    class_type: type = actuator_pd.DCMotor
-
-    saturation_effort: float = MISSING
-    """Peak motor force/torque of the electric DC motor (in N-m)."""
-
-
-@configclass
-class ActuatorNetLSTMCfg(DCMotorCfg):
-    """Configuration for LSTM-based actuator model."""
-
-    class_type: type = actuator_net.ActuatorNetLSTM
-    # we don't use stiffness and damping for actuator net
-    stiffness = None
-    damping = None
-
-    network_file: str = MISSING
-    """Path to the file containing network weights."""
-
-
-@configclass
-class ActuatorNetMLPCfg(DCMotorCfg):
-    """Configuration for MLP-based actuator model."""
-
-    class_type: type = actuator_net.ActuatorNetMLP
-    # we don't use stiffness and damping for actuator net
-    stiffness = None
-    damping = None
-
-    network_file: str = MISSING
-    """Path to the file containing network weights."""
-
-    pos_scale: float = MISSING
-    """Scaling of the joint position errors input to the network."""
-    vel_scale: float = MISSING
-    """Scaling of the joint velocities input to the network."""
-    torque_scale: float = MISSING
-    """Scaling of the joint efforts output from the network."""
-
-    input_order: Literal["pos_vel", "vel_pos"] = MISSING
-    """Order of the inputs to the network.
-
-    The order can be one of the following:
-
-    * ``"pos_vel"``: joint position errors followed by joint velocities
-    * ``"vel_pos"``: joint velocities followed by joint position errors
-    """
-
-    input_idx: Iterable[int] = MISSING
-    """
-    Indices of the actuator history buffer passed as inputs to the network.
-
-    The index *0* corresponds to current time-step, while *n* corresponds to n-th
-    time-step in the past. The allocated history length is `max(input_idx) + 1`.
-    """
-
-
-@configclass
-class DelayedPDActuatorCfg(IdealPDActuatorCfg):
-    """Configuration for a delayed PD actuator."""
-
-    class_type: type = actuator_pd.DelayedPDActuator
-
-    min_delay: int = 0
-    """Minimum number of physics time-steps with which the actuator command may be delayed. Defaults to 0."""
-
-    max_delay: int = 0
-    """Maximum number of physics time-steps with which the actuator command may be delayed. Defaults to 0."""
-
-
-@configclass
-class RemotizedPDActuatorCfg(DelayedPDActuatorCfg):
-    """Configuration for a remotized PD actuator.
-
-    Note:
-        The torque output limits for this actuator is derived from a linear interpolation of a lookup table
-        in :attr:`joint_parameter_lookup`. This table describes the relationship between joint angles and
-        the output torques.
-    """
-
-    class_type: type = actuator_pd.RemotizedPDActuator
-
-    joint_parameter_lookup: list[list[float]] = MISSING
-    """Joint parameter lookup table. Shape is (num_lookup_points, 3).
-
-    This tensor describes the relationship between the joint angle (rad), the transmission ratio (in/out),
-    and the output torque (N*m). The table is used to interpolate the output torque based on the joint angle.
     """
