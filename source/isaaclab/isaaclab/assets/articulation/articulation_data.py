@@ -3,6 +3,11 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+# Copyright (c) 2022-2025, The Isaac Lb Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 import torch
 import weakref
 
@@ -282,8 +287,8 @@ class ArticulationData:
     This quantity is parsed from the USD schema at the time of initialization.
     """
 
-    default_joint_drive_model_properties: torch.Tensor = None
-    """Default joint drive model properties. Shape is (num_instances, num_drive_models, 3). The last indices reflect
+    default_joint_drive_model_parameters: torch.Tensor = None
+    """Default joint drive model parameters. Shape is (num_instances, num_drive_models, 3). The last indices reflect
        the speed_effort_gradient, the max_actuator_velocity, and the velocity_dependent_resistance respectively."""
 
     ##

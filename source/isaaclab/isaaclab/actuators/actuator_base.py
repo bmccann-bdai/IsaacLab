@@ -76,7 +76,7 @@ class ActuatorBase(ABC):
     """
 
     drive_model: torch.Tensor
-    """A tuple for each joint/env defining the speed_effort_gradient, maximum actuator velocity, and
+    """Three parameters for each joint/env defining the speed_effort_gradient, maximum actuator velocity, and
     velocity_dependent_resistance which define velocity and effort dependent constraints on the motor's performance.
     This feature is only implemented in IsaacSim v5.0. Shape is (num_envs, num_joints, 3)."""
 
@@ -189,21 +189,27 @@ class ActuatorBase(ABC):
         for param_name, usd_val, *tuple_len in to_check:
             # check if the parameter requires a tuple or a single float
             if len(tuple_len) > 0:
-                shape = (self.num_envs, self.num_joints, tuple_len[0])
+                shape = (self._num_envs, self.num_joints, tuple_len[0])
             else:
-                shape = (self.num_envs, self.num_joints)
+                shape = (self._num_envs, self.num_joints)
 
             cfg_val = getattr(self.cfg, param_name)
             setattr(self, param_name, self._parse_joint_parameter(cfg_val, usd_val, shape, param_name=param_name))
             new_val = getattr(self, param_name)
 
             allclose = (
-                torch.all(new_val == usd_val) if isinstance(usd_val, (float, int)) else torch.allclose(new_val, usd_val)
+                torch.all(new_val == usd_val)
+                if isinstance(usd_val, (float, int))
+                else (
+                    all([torch.all(new_val[:, :, i] == float(v)) for i, v in enumerate(usd_val)])
+                    if isinstance(usd_val, tuple)
+                    else torch.allclose(new_val, usd_val)
+                )
             )
             if cfg_val is None or not allclose:
                 self._record_actuator_resolution(
                     cfg_val=getattr(self.cfg, param_name),
-                    new_val=new_val[0],  # new val always has the shape of (num_envs, num_joints)
+                    new_val=new_val[0],
                     usd_val=usd_val,
                     joint_names=joint_names,
                     joint_ids=joint_ids,
@@ -218,7 +224,7 @@ class ActuatorBase(ABC):
         )
 
         # create commands buffers for allocation
-        self.computed_effort = torch.zeros(self.num_envs, self.num_joints, device=self._device)
+        self.computed_effort = torch.zeros(self._num_envs, self.num_joints, device=self._device)
         self.applied_effort = torch.zeros_like(self.computed_effort)
 
     def __str__(self) -> str:
@@ -306,10 +312,16 @@ class ActuatorBase(ABC):
 
         ids = joint_ids if isinstance(joint_ids, torch.Tensor) else list(range(len(joint_names)))
         for idx, name in enumerate(joint_names):
-            cfg_val_log = "Not Specified" if cfg_val is None else float(new_val[idx])
-            default_usd_val = usd_val if isinstance(usd_val, (float, int)) else float(usd_val[0][idx])
-            applied_val_log = default_usd_val if cfg_val is None else float(new_val[idx])
-            table.append([name, int(ids[idx]), default_usd_val, cfg_val_log, applied_val_log])
+            if len(new_val.shape) == 1:
+                cfg_val_log = "Not Specified" if cfg_val is None else float(new_val[idx])
+                default_usd_val = usd_val if isinstance(usd_val, (float, int)) else float(usd_val[0][idx])
+                applied_val_log = default_usd_val if cfg_val is None else float(new_val[idx])
+                table.append([name, int(ids[idx]), default_usd_val, cfg_val_log, applied_val_log])
+            else:
+                cfg_val_log = "Not Specified" if cfg_val is None else tuple(new_val[idx])
+                default_usd_val = usd_val if isinstance(usd_val, (tuple)) else tuple(usd_val[0][idx][:])
+                applied_val_log = default_usd_val if cfg_val is None else tuple(new_val[idx])
+                table.append([name, int(ids[idx]), default_usd_val, cfg_val_log, applied_val_log])
 
     def _parse_joint_parameter(
         self,
@@ -340,7 +352,7 @@ class ActuatorBase(ABC):
             ValueError: If a tensor or tuple is the wrong shape.
         """
         if expected_shape is None:
-            expected_shape = (self.num_envs, self.num_joints)
+            expected_shape = (self._num_envs, self.num_joints)
         # create parameter buffer
         param = torch.zeros(*expected_shape, device=self._device)
 
@@ -414,12 +426,12 @@ class ActuatorBase(ABC):
                     )
             elif isinstance(default_value, torch.Tensor):
                 # if tensor, then use the same tensor for all joints
-                if default_value.shape is expected_shape:
+                if tuple(default_value.shape) == expected_shape:
                     param = default_value.float()
                 else:
                     raise ValueError(
                         "Invalid default value tensor shape.\n"
-                        + f"Got: {default_value.shape}\n"
+                        + f"Got: {tuple(default_value.shape)}\n"
                         + f"Expected: {expected_shape}"
                     )
             else:

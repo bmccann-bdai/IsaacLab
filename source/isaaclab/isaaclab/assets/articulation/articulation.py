@@ -792,7 +792,7 @@ class Articulation(AssetBase):
         # set into simulation
         self.root_physx_view.set_dof_max_forces(self._data.joint_effort_limits.cpu(), indices=physx_env_ids.cpu())
 
-    def write_drive_model_properties_to_sim(
+    def write_joint_drive_model_to_sim(
         self,
         drive_params: torch.Tensor | tuple[float, float, float] | None = None,
         joint_ids: Sequence[int] | slice | None = None,
@@ -1633,11 +1633,11 @@ class Articulation(AssetBase):
         self._data.joint_pos_limits = self._data.default_joint_pos_limits.clone()
         self._data.joint_vel_limits = self.root_physx_view.get_dof_max_velocities().to(self.device).clone()
         self._data.joint_effort_limits = self.root_physx_view.get_dof_max_forces().to(self.device).clone()
-
-        if int(get_version()[2]) < 5:
-            self._data.joint_drive_model_parameters = (
+        if int(get_version()[2]) >= 5:
+            self._data.default_joint_drive_model_parameters = (
                 self.root_physx_view.get_dof_drive_model_properties().to(self.device).clone()
             )
+            self._data.joint_drive_model_parameters = self._data.default_joint_drive_model_parameters.clone()
 
         self._data.joint_stiffness = self._data.default_joint_stiffness.clone()
         self._data.joint_damping = self._data.default_joint_damping.clone()
@@ -1760,6 +1760,7 @@ class Articulation(AssetBase):
                 viscous_friction=self._data.default_joint_viscous_friction_coeff[:, joint_ids],
                 effort_limit=self._data.joint_effort_limits[:, joint_ids],
                 velocity_limit=self._data.joint_vel_limits[:, joint_ids],
+                drive_model=self._data.joint_drive_model_parameters[:, joint_ids],
             )
             # log information on actuator groups
             model_type = "implicit" if actuator.is_implicit_model else "explicit"
@@ -1787,16 +1788,12 @@ class Articulation(AssetBase):
             self.write_joint_armature_to_sim(actuator.armature, joint_ids=actuator.joint_indices)
             self.write_joint_friction_coefficient_to_sim(actuator.friction, joint_ids=actuator.joint_indices)
             if int(get_version()[2]) >= 5:
+                self.write_joint_drive_model_to_sim(actuator.drive_model, joint_ids=actuator.joint_indices)
                 self.write_joint_dynamic_friction_coefficient_to_sim(
                     actuator.dynamic_friction, joint_ids=actuator.joint_indices
                 )
                 self.write_joint_viscous_friction_coefficient_to_sim(
                     actuator.viscous_friction, joint_ids=actuator.joint_indices
-                )
-                self.write_drive_model_properties_to_sim(
-                    actuator.dm_speed_effort_gradient,
-                    actuator.dm_max_actuator_velocity,
-                    actuator.dm_velocity_dependent_resistance,
                 )
 
             # Store the configured values from the actuator model
@@ -1808,7 +1805,7 @@ class Articulation(AssetBase):
             if int(get_version()[2]) >= 5:
                 self._data.default_joint_dynamic_friction_coeff[:, actuator.joint_indices] = actuator.dynamic_friction
                 self._data.default_joint_viscous_friction_coeff[:, actuator.joint_indices] = actuator.viscous_friction
-
+                self._data.default_joint_drive_model_parameters[:, actuator.joint_indices] = actuator.drive_model
         # perform some sanity checks to ensure actuators are prepared correctly
         total_act_joints = sum(actuator.num_joints for actuator in self.actuators.values())
         if total_act_joints != (self.num_joints - self.num_fixed_tendons):
@@ -1825,7 +1822,16 @@ class Articulation(AssetBase):
                     for prop_idx, resolution_detail in enumerate(resolution_details):
                         actuator_group_str = actuator_group if group_count == 0 else ""
                         property_str = property if prop_idx == 0 else ""
-                        fmt = [f"{v:.2e}" if isinstance(v, float) else str(v) for v in resolution_detail]
+                        fmt = [
+                            (
+                                f"{v:.2e}"
+                                if isinstance(v, float)
+                                else (
+                                    "(" + ", ".join([f"{vt:.2e}" for vt in v]) + ")" if isinstance(v, tuple) else str(v)
+                                )
+                            )
+                            for v in resolution_detail
+                        ]
                         t.add_row([actuator_group_str, property_str, *fmt])
                         group_count += 1
             omni.log.warn(f"\nActuatorCfg-USD Value Discrepancy Resolution (matching values are skipped): \n{t}")

@@ -29,9 +29,11 @@ def test_init_drive_model(num_envs, num_joints, device):
     damping = 10
     effort_limit = 60.0
     velocity_limit = 50
-    dm_speed_effort_gradient = 100.0
-    dm_max_actuator_velocity = 200.0
-    dm_velocity_dependent_resistance = 0.1
+    drive_model = IdealPDActuatorCfg.DriveModelCfg(
+        speed_effort_gradient=100.0,
+        max_actuator_velocity=200.0,
+        velocity_dependent_resistance=0.1,
+    )
 
     actuator_cfg = IdealPDActuatorCfg(
         joint_names_expr=joint_names,
@@ -39,9 +41,7 @@ def test_init_drive_model(num_envs, num_joints, device):
         damping=damping,
         effort_limit=effort_limit,
         velocity_limit=velocity_limit,
-        dm_speed_effort_gradient=dm_speed_effort_gradient,
-        dm_max_actuator_velocity=dm_max_actuator_velocity,
-        dm_velocity_dependent_resistance=dm_velocity_dependent_resistance,
+        drive_model=drive_model,
     )
     # assume Articulation class:
     #   - finds joints (names and ids) associate with the provided joint_names_expr
@@ -56,16 +56,16 @@ def test_init_drive_model(num_envs, num_joints, device):
 
     # check device and shape
     torch.testing.assert_close(
-        actuator.dm_velocity_dependent_resistance,
-        dm_velocity_dependent_resistance * torch.ones(num_envs, num_joints, device=device),
+        actuator.drive_model[:, :, 2],
+        drive_model.velocity_dependent_resistance * torch.ones(num_envs, num_joints, device=device),
     )
     torch.testing.assert_close(
-        actuator.dm_max_actuator_velocity,
-        dm_max_actuator_velocity * torch.ones(num_envs, num_joints, device=device),
+        actuator.drive_model[:, :, 1],
+        drive_model.max_actuator_velocity * torch.ones(num_envs, num_joints, device=device),
     )
     torch.testing.assert_close(
-        actuator.dm_speed_effort_gradient,
-        dm_speed_effort_gradient * torch.ones(num_envs, num_joints, device=device),
+        actuator.drive_model[:, :, 0],
+        drive_model.speed_effort_gradient * torch.ones(num_envs, num_joints, device=device),
     )
 
 
