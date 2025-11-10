@@ -1,7 +1,19 @@
 Changelog
 ---------
 
+0.48.3 (2025-11-13)
+~~~~~~~~~~~~~~~~~~~
+
+Added
+^^^^^
+
+* Implemented drive model improvements for implicit actuators allowing them to configure a new feature within physx to apply
+  constraints on actuator effort dependent on the torque and velocity on the articulation.
+* Introduced a NamedTuple config classes as a way to organize related parameters, and extended the configuration parsing to
+  work with related (mutually dependent) parameters in the configurations.
+
 0.48.2 (2025-11-13)
+~~~~~~~~~~~~~~~~~~~
 
 Changed
 ^^^^^^^
@@ -20,8 +32,6 @@ Added
 * Added demo script ``scripts/demos/haply_teleoperation.py`` and documentation guide in
   ``docs/source/how-to/haply_teleoperation.rst`` for Haply-based robot teleoperation.
 
-=======
->>>>>>> 1c5ab00b89 (Refactor Actuator Configs to avoid circular import.)
 0.48.0 (2025-11-03)
 ~~~~~~~~~~~~~~~~~~~
 
@@ -82,7 +92,6 @@ Added
 ^^^^^
 
 * Added parameter :attr:`~isaaclab.terrains.TerrainImporterCfg.use_terrain_origins` to allow generated sub terrains with grid origins.
-
 
 0.47.7 (2025-10-31)
 ~~~~~~~~~~~~~~~~~~~
