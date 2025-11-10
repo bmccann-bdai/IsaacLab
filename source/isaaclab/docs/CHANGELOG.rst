@@ -1,6 +1,15 @@
 Changelog
 ---------
 
+0.48.1 (2025-11-10)
+~~~~~~~~~~~~~~~~~~~
+
+Changed
+^^^^^^^
+
+* Refactored modules related to the actuator configs in order to remediate a circular import necessary to support future
+  actuator drive model improvements.
+
 0.48.0 (2025-11-03)
 ~~~~~~~~~~~~~~~~~~~
 
