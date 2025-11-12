@@ -27,7 +27,7 @@ from isaacsim.core.version import get_version
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
 import isaaclab.utils.string as string_utils
-from isaaclab.actuators import ActuatorBase, IdealPDActuatorCfg, ImplicitActuatorCfg
+from isaaclab.actuators import ActuatorBase, IdealPDActuatorCfg, ImplicitActuatorCfg, ActuatorBaseCfg
 from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.envs.mdp.terminations import joint_effort_out_of_limit
 from isaaclab.managers import SceneEntityCfg
@@ -1450,6 +1450,84 @@ def test_setting_drive_model_implicit(sim, num_articulations, device, drive_mode
     else:
         # check actuator velocity_limit is the same as the PhysX default
         torch.testing.assert_close(actuator_dm, physx_dm)
+
+@pytest.mark.parametrize("condition", 
+    [
+        {
+            "description" : "Default Settings"
+            "effort_limit" : torch.inf,
+            "drive_model" : ActuatorBaseCfg.DriveModelCfg(
+                    speed_effort_gradient=0.0,
+                    max_actuator_velocity=torch.inf,
+                    velocity_dependent_resistance=0.0,
+                    ),
+            "velocity_state" : 1.0,
+            "effort_state" : 1.0,
+            "effort_requested" : 1.0,
+            "expected_effort" : 1.0,
+        },
+        {
+            "description" : "Default Settings"
+            "effort_limit" : torch.inf,
+            "drive_model" : ActuatorBaseCfg.DriveModelCfg(
+                    speed_effort_gradient=0.0,
+                    max_actuator_velocity=torch.inf,
+                    velocity_dependent_resistance=0.0,
+                    ),
+            "velocity_state" : 1.0,
+            "effort_state" : 1.0,
+            "effort_requested" : 1.0,
+            "expected_effort" : 1.0,
+        },
+        {
+            "description" : "Default Settings"
+            "effort_limit" : torch.inf,
+            "drive_model" : ActuatorBaseCfg.DriveModelCfg(
+                    speed_effort_gradient=0.0,
+                    max_actuator_velocity=torch.inf,
+                    velocity_dependent_resistance=0.0,
+                    ),
+            "velocity_state" : 1.0,
+            "effort_state" : 1.0,
+            "effort_requested" : 1.0,
+            "expected_effort" : 1.0,
+        },
+    ])
+
+
+@pytest.mark.parametrize("device", ["cuda:0", "cpu"])
+@pytest.mark.isaacsim_ci
+def test_drive_model_constraints_implicit(sim, device, **condition):
+    """Test the implicit actuator's drive model constraints impact on limiting actuator effort.
+
+    Args:
+        sim: the sim context fixture
+        device: the device were tensors are stored.
+        condition: dict
+            A dictionary containing the parameters for the current test condition.
+            Keys and their descriptions:
+            ``"description"`` : str
+                A written description motivating the condition.
+            ``"effort_limit"`` : float
+                The maximum effort the actuator can produce (Nm).
+            ``"drive_model"`` : tuple[float,float,float] | ActuatorBaseCfg.DriveModelCfg
+                The other parameters in the actuator drive model including:
+                1) drive_model.speed_effort_gradient : float
+                    Slope (Nm/(rad/s)) defining the speed-torque boundary which limits to the maximum velocity for any applied torque.
+                2) drive_model.max_actuator_velocity : float
+                    The maximum velocity (rad/s) achievable by the actuator with no effort applied.
+                3) drive_model.velocity_dependent_resistance : float
+                    Slope ((rad/s)/Nm) defining the torque-speed boundary which limits the maximum achievable torque at a given velocity.
+            ``"velocity_state"`` : float
+                Pre step actuator velocity (rad/s).
+            ``"effort_state"`` : float
+                Pre step actuator effort (Nm).
+            ``"effort_requested"`` : float
+                Drive effort requested at after step (Nm).
+            ``"expected_effort" : float
+                Drive effort expected post simulation step after the actuator constraints have been applied.
+    """
+
 
 
 @pytest.mark.parametrize("num_articulations", [1, 2])
