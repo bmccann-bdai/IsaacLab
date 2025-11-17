@@ -120,20 +120,6 @@ Added
 
 * Added parameter :attr:`~isaaclab.terrains.TerrainImporterCfg.use_terrain_origins` to allow generated sub terrains with grid origins.
 
-<<<<<<< HEAD
-=======
-0.48.2 (2025-11-10)
-~~~~~~~~~~~~~~~~~~
-
-Added
-^^^^^
-
-* Implemented drive model improvements for implicit actuators allowing them to configure a new feature within physx to apply
-  constraints on actuator effort dependent on the torque and velocity on the articulation.
-* Introduced a NamedTuple config classes as a way to organize related parameters, and extended the configuration parsing to
-  work with related (mutually dependent) parameters in the configurations.
-
->>>>>>> 5b79fbca5d (This change implements the necessary changes to the articulation and actuator classes in order to configure the new actuator drive model including velocity and effort dependent constraints on motor actuation. For details see https://nvidia-omniverse.github.io/PhysX/physx/5.6.1/docs/Articulations.html#articulation-drive-stability and https://docs.omniverse.nvidia.com/kit/docs/omni_physics/latest/extensions/runtime/source/omni.physics.tensors/docs/api/python.html#omni.physics.tensors.impl.api.ArticulationView.set_dof_drive_model_properties)
 0.47.7 (2025-10-31)
 ~~~~~~~~~~~~~~~~~~~
 

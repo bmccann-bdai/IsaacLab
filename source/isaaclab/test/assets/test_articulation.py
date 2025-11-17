@@ -27,7 +27,7 @@ from isaacsim.core.version import get_version
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
 import isaaclab.utils.string as string_utils
-from isaaclab.actuators import ActuatorBase, IdealPDActuatorCfg, ImplicitActuatorCfg, ActuatorBaseCfg
+from isaaclab.actuators import ActuatorBase, ActuatorBaseCfg, IdealPDActuatorCfg, ImplicitActuatorCfg
 from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.envs.mdp.terminations import joint_effort_out_of_limit
 from isaaclab.managers import SceneEntityCfg
@@ -103,8 +103,8 @@ def generate_articulation_cfg(
                     velocity_limit_sim=velocity_limit_sim,
                     effort_limit=effort_limit,
                     velocity_limit=velocity_limit,
-                    stiffness=2000.0,
-                    damping=100.0,
+                    stiffness=stiffness,
+                    damping=damping,
                     drive_model=drive_model,
                 ),
             },
@@ -128,8 +128,8 @@ def generate_articulation_cfg(
                     velocity_limit_sim=velocity_limit_sim,
                     effort_limit=effort_limit,
                     velocity_limit=velocity_limit,
-                    stiffness=0.0,
-                    damping=10.0,
+                    stiffness=stiffness,
+                    damping=damping,
                     drive_model=drive_model,
                 ),
             },
@@ -143,8 +143,8 @@ def generate_articulation_cfg(
             actuators={
                 "joint": ImplicitActuatorCfg(
                     joint_names_expr=[".*"],
-                    stiffness=2000.0,
-                    damping=100.0,
+                    stiffness=stiffness,
+                    damping=damping,
                 ),
             },
         )
@@ -401,7 +401,11 @@ def test_initialization_fixed_base_single_joint(sim, num_articulations, device, 
         num_articulations: Number of articulations to test
         device: The device to run the simulation on
     """
-    articulation_cfg = generate_articulation_cfg(articulation_type="single_joint_implicit")
+    articulation_cfg = generate_articulation_cfg(
+        articulation_type="single_joint_implicit",
+        stiffness=2000.0,  # These magic values were previously hardcoded and short-circuited provided parameters.
+        damping=100.0,  # They have been migrated here to ensure the test behavior is unchanged.
+    )
     articulation, translations = generate_articulation(articulation_cfg, num_articulations, device=device)
 
     # Check that boundedness of articulation is correct
@@ -1278,6 +1282,8 @@ def test_setting_velocity_limit_implicit(sim, num_articulations, device, vel_lim
         articulation_type="single_joint_implicit",
         velocity_limit_sim=vel_limit_sim,
         velocity_limit=vel_limit,
+        stiffness=2000.0,  # These magic values were previously hardcoded and short-circuited provided parameters.
+        damping=100.0,  # They have been migrated here to ensure the test behavior is unchanged.
     )
     articulation, _ = generate_articulation(
         articulation_cfg=articulation_cfg,
@@ -1331,6 +1337,8 @@ def test_setting_velocity_limit_explicit(sim, num_articulations, device, vel_lim
         articulation_type="single_joint_explicit",
         velocity_limit_sim=vel_limit_sim,
         velocity_limit=vel_limit,
+        stiffness=0.0,  # These magic values were previously hardcoded and short-circuited provided parameters.
+        damping=10.0,  # They have been migrated here to ensure the test behavior is unchanged.
     )
     articulation, _ = generate_articulation(
         articulation_cfg=articulation_cfg,
@@ -1451,53 +1459,55 @@ def test_setting_drive_model_implicit(sim, num_articulations, device, drive_mode
         # check actuator velocity_limit is the same as the PhysX default
         torch.testing.assert_close(actuator_dm, physx_dm)
 
-@pytest.mark.parametrize("condition", 
+
+@pytest.mark.parametrize(
+    "condition",
     [
         {
-            "description" : "Default Settings"
-            "effort_limit" : torch.inf,
-            "drive_model" : ActuatorBaseCfg.DriveModelCfg(
-                    speed_effort_gradient=0.0,
-                    max_actuator_velocity=torch.inf,
-                    velocity_dependent_resistance=0.0,
-                    ),
-            "velocity_state" : 1.0,
-            "effort_state" : 1.0,
-            "effort_requested" : 1.0,
-            "expected_effort" : 1.0,
+            "description": "Default Settings. No clipping should occur",
+            "effort_limit": torch.inf,
+            "drive_model": ActuatorBaseCfg.DriveModelCfg(
+                speed_effort_gradient=0.0,
+                max_actuator_velocity=torch.inf,
+                velocity_dependent_resistance=0.0,
+            ),
+            "velocity_state": 1.0,
+            "effort_state": 1.0,
+            "effort_requested": 1.0,
+            "expected_effort": 1.0,
         },
         {
-            "description" : "Default Settings"
-            "effort_limit" : torch.inf,
-            "drive_model" : ActuatorBaseCfg.DriveModelCfg(
-                    speed_effort_gradient=0.0,
-                    max_actuator_velocity=torch.inf,
-                    velocity_dependent_resistance=0.0,
-                    ),
-            "velocity_state" : 1.0,
-            "effort_state" : 1.0,
-            "effort_requested" : 1.0,
-            "expected_effort" : 1.0,
+            "description": "Default Settings",
+            "effort_limit": torch.inf,
+            "drive_model": ActuatorBaseCfg.DriveModelCfg(
+                speed_effort_gradient=0.0,
+                max_actuator_velocity=torch.inf,
+                velocity_dependent_resistance=0.0,
+            ),
+            "velocity_state": 1.0,
+            "effort_state": 1.0,
+            "effort_requested": 1.0,
+            "expected_effort": 1.0,
         },
         {
-            "description" : "Default Settings"
-            "effort_limit" : torch.inf,
-            "drive_model" : ActuatorBaseCfg.DriveModelCfg(
-                    speed_effort_gradient=0.0,
-                    max_actuator_velocity=torch.inf,
-                    velocity_dependent_resistance=0.0,
-                    ),
-            "velocity_state" : 1.0,
-            "effort_state" : 1.0,
-            "effort_requested" : 1.0,
-            "expected_effort" : 1.0,
+            "description": "Default Settings",
+            "effort_limit": 100.0,
+            "drive_model": ActuatorBaseCfg.DriveModelCfg(
+                speed_effort_gradient=100.0,
+                max_actuator_velocity=200.0,
+                velocity_dependent_resistance=0.1,
+            ),
+            "velocity_state": 1.0,
+            "effort_state": 1.0,
+            "effort_requested": 1.0,
+            "expected_effort": 1.0,
         },
-    ])
-
-
+    ],
+)
 @pytest.mark.parametrize("device", ["cuda:0", "cpu"])
+@pytest.mark.parametrize("gravity_enabled", [False])  # Disable gravity to remove external forces to consider
 @pytest.mark.isaacsim_ci
-def test_drive_model_constraints_implicit(sim, device, **condition):
+def test_drive_model_constraints_implicit(sim, device, condition):
     """Test the implicit actuator's drive model constraints impact on limiting actuator effort.
 
     Args:
@@ -1527,7 +1537,64 @@ def test_drive_model_constraints_implicit(sim, device, **condition):
             ``"expected_effort" : float
                 Drive effort expected post simulation step after the actuator constraints have been applied.
     """
+    _test_drive_model_constraints_implicit(sim, device, **condition)
 
+
+def _test_drive_model_constraints_implicit(
+    sim,
+    device,
+    description,
+    effort_limit,
+    drive_model,
+    velocity_state,
+    effort_state,
+    effort_requested,
+    expected_effort,
+):
+    print(f"Test Description: {description}")
+    articulation_cfg = generate_articulation_cfg(
+        articulation_type="single_joint_implicit",
+        effort_limit_sim=effort_limit,
+        drive_model=drive_model,
+        stiffness=0.0,  # Only consider the drive model impact on the applied impulse.
+        damping=0.0,
+    )
+    articulation, _ = generate_articulation(
+        articulation_cfg=articulation_cfg,
+        num_articulations=1,
+        device=device,
+    )
+    # Play sim
+    sim.reset()
+
+    # collect dm init values
+    physx_dm = articulation.root_physx_view.get_dof_drive_model_properties().to(device)
+    actuator_dm = articulation.actuators["joint"].drive_model
+
+    # check data buffer for joint_
+    torch.testing.assert_close(articulation.data.joint_drive_model_parameters, physx_dm)
+
+    if drive_model is not None:
+        expected_actuator_dm = torch.zeros(
+            (articulation.num_instances, articulation.num_joints, 3),
+            device=articulation.device,
+        )
+        expected_actuator_dm[:, :, 0] = drive_model[0]
+        expected_actuator_dm[:, :, 1] = drive_model[1]
+        expected_actuator_dm[:, :, 2] = drive_model[2]
+
+        # check actuator is set
+        torch.testing.assert_close(actuator_dm, expected_actuator_dm)
+    else:
+        # check actuator velocity_limit is the same as the PhysX default
+        torch.testing.assert_close(actuator_dm, physx_dm)
+
+
+#   _initialize_condition()
+#    _establish_state()
+#    _apply_command()
+#    _step_simulation()
+#    _check_values()
 
 
 @pytest.mark.parametrize("num_articulations", [1, 2])
@@ -1547,6 +1614,8 @@ def test_setting_effort_limit_implicit(sim, num_articulations, device, effort_li
         articulation_type="single_joint_implicit",
         effort_limit_sim=effort_limit_sim,
         effort_limit=effort_limit,
+        stiffness=2000.0,  # These magic values were previously hardcoded and short-circuited provided parameters.
+        damping=100.0,  # They have been migrated here to ensure the test behavior is unchanged.
     )
     articulation, _ = generate_articulation(
         articulation_cfg=articulation_cfg,
@@ -1602,6 +1671,8 @@ def test_setting_effort_limit_explicit(sim, num_articulations, device, effort_li
         articulation_type="single_joint_explicit",
         effort_limit_sim=effort_limit_sim,
         effort_limit=effort_limit,
+        stiffness=0.0,  # These magic values were previously hardcoded and short-circuited provided parameters.
+        damping=10.0,  # They have been migrated here to ensure the test behavior is unchanged.
     )
     articulation, _ = generate_articulation(
         articulation_cfg=articulation_cfg,
@@ -1727,7 +1798,11 @@ def test_body_root_state(sim, num_articulations, device, with_offset):
         with_offset: Whether to test with offset
     """
     sim._app_control_on_stop_handle = None
-    articulation_cfg = generate_articulation_cfg(articulation_type="single_joint_implicit")
+    articulation_cfg = generate_articulation_cfg(
+        articulation_type="single_joint_implicit",
+        stiffness=2000.0,  # These magic values were previously hardcoded and short-circuited provided parameters.
+        damping=100.0,  # They have been migrated here to ensure the test behavior is unchanged.
+    )
     articulation, env_pos = generate_articulation(articulation_cfg, num_articulations, device)
     env_idx = torch.tensor([x for x in range(num_articulations)], device=device)
     # Check that boundedness of articulation is correct
@@ -1915,7 +1990,11 @@ def test_body_incoming_joint_wrench_b_single_joint(sim, num_articulations, devic
         num_articulations: Number of articulations to test
         device: The device to run the simulation on
     """
-    articulation_cfg = generate_articulation_cfg(articulation_type="single_joint_implicit")
+    articulation_cfg = generate_articulation_cfg(
+        articulation_type="single_joint_implicit",
+        stiffness=2000.0,  # These magic values were previously hardcoded and short-circuited provided parameters.
+        damping=100.0,  # They have been migrated here to ensure the test behavior is unchanged.
+    )
     articulation, _ = generate_articulation(
         articulation_cfg=articulation_cfg, num_articulations=num_articulations, device=device
     )
@@ -2121,7 +2200,11 @@ def test_spatial_tendons(sim, num_articulations, device):
     if int(get_version()[2]) < 5:
         pytest.skip("Spatial tendons are not supported in Isaac Sim < 5.0. Please update to Isaac Sim 5.0 or later.")
         return
-    articulation_cfg = generate_articulation_cfg(articulation_type="spatial_tendon_test_asset")
+    articulation_cfg = generate_articulation_cfg(
+        articulation_type="spatial_tendon_test_asset",
+        stiffness=2000.0,  # These magic values were previously hardcoded and short-circuited provided parameters.
+        damping=100.0,  # They have been migrated here to ensure the test behavior is unchanged.
+    )
     articulation, _ = generate_articulation(articulation_cfg, num_articulations, device=device)
 
     # Check that boundedness of articulation is correct
