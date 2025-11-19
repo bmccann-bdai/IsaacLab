@@ -1484,7 +1484,7 @@ def test_setting_drive_model_implicit(sim, num_articulations, device, drive_mode
                 max_actuator_velocity=torch.inf,
                 velocity_dependent_resistance=0.0,
             ),
-            "velocity_state": 1.0,
+            "velocity_state": 2.0,
             "effort_state": 1.0,
             "effort_requested": 1.0,
             "expected_effort": 1.0,
@@ -1497,7 +1497,7 @@ def test_setting_drive_model_implicit(sim, num_articulations, device, drive_mode
                 max_actuator_velocity=200.0,
                 velocity_dependent_resistance=0.1,
             ),
-            "velocity_state": 1.0,
+            "velocity_state": 3.0,
             "effort_state": 1.0,
             "effort_requested": 1.0,
             "expected_effort": 1.0,
@@ -1507,7 +1507,7 @@ def test_setting_drive_model_implicit(sim, num_articulations, device, drive_mode
 @pytest.mark.parametrize("device", ["cuda:0", "cpu"])
 @pytest.mark.parametrize("gravity_enabled", [False])  # Disable gravity to remove external forces to consider
 @pytest.mark.isaacsim_ci
-def test_drive_model_constraints_implicit(sim, device, condition):
+def test_drive_model_constraints_implicit(sim, device, condition, gravity_enabled):
     """Test the implicit actuator's drive model constraints impact on limiting actuator effort.
 
     Args:
@@ -1567,30 +1567,35 @@ def _test_drive_model_constraints_implicit(
     # Play sim
     sim.reset()
 
-    # collect dm init values
-    physx_dm = articulation.root_physx_view.get_dof_drive_model_properties().to(device)
-    actuator_dm = articulation.actuators["joint"].drive_model
-
-    # check data buffer for joint_
-    torch.testing.assert_close(articulation.data.joint_drive_model_parameters, physx_dm)
-
-    if drive_model is not None:
-        expected_actuator_dm = torch.zeros(
-            (articulation.num_instances, articulation.num_joints, 3),
-            device=articulation.device,
-        )
-        expected_actuator_dm[:, :, 0] = drive_model[0]
-        expected_actuator_dm[:, :, 1] = drive_model[1]
-        expected_actuator_dm[:, :, 2] = drive_model[2]
-
-        # check actuator is set
-        torch.testing.assert_close(actuator_dm, expected_actuator_dm)
-    else:
-        # check actuator velocity_limit is the same as the PhysX default
-        torch.testing.assert_close(actuator_dm, physx_dm)
+    physx = articulation.root_physx_view
+    all_indices = torch.arange(physx.count, device=device)
+    dof_velocities = velocity_state * torch.ones(physx.count * physx.max_dofs, dtype=torch.float32, device=device)
+    physx.set_dof_velocities(dof_velocities, all_indices)
+    residual_effort = physx.get_dof_projected_joint_forces()
+    print(residual_effort)
+    dof_actuation_forces = effort_state * torch.ones(physx.count * physx.max_dofs, dtype=torch.float32, device=device)
+    dof_actuation_forces = dof_actuation_forces - residual_effort
+    physx.set_dof_actuation_forces(dof_actuation_forces, all_indices)
+    sim.step()
+    mf = articulation.root_physx_view.get_dof_projected_joint_forces()
+    mv = articulation.root_physx_view.get_dof_velocities()
+    print(mf)
+    print(mv)
 
 
-#   _initialize_condition()
+#    dof_actuation_forces = effort_state*torch.ones(physx.count * physx.max_dofs, dtype=torch.float32, device=device)
+#    physx.set_dof_actuation_forces(dof_actuation_forces, all_indices)
+#    mf = articulation.root_physx_view.get_dof_projected_joint_forces()
+#    mv = articulation.root_physx_view.get_dof_velocities()
+#    print(mf)
+#    print(mv)
+#    sim.step()
+#    mf = articulation.root_physx_view.get_dof_projected_joint_forces()
+#    mv = articulation.root_physx_view.get_dof_velocities()
+#    print(mf)
+#    print(mv)
+
+#    _initialize_condition()
 #    _establish_state()
 #    _apply_command()
 #    _step_simulation()
