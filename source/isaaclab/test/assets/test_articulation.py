@@ -94,7 +94,14 @@ def generate_articulation_cfg(
             # we set 80.0 default for max force because default in USD is 10e10 which makes testing annoying.
             spawn=sim_utils.UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Robots/IsaacSim/SimpleArticulation/revolute_articulation.usd",
-                joint_drive_props=sim_utils.JointDrivePropertiesCfg(max_effort=80.0, max_velocity=5.0),
+#                articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+#                    enabled_self_collisions=True,
+#                    solver_position_iteration_count=32,
+#                    solver_velocity_iteration_count=32,
+#                    sleep_threshold=0.005,
+#                    stabilization_threshold=0.001,
+#                ),
+#               joint_drive_props=sim_utils.JointDrivePropertiesCfg(max_effort=80.0, max_velocity=5.0),
             ),
             actuators={
                 "joint": ImplicitActuatorCfg(
@@ -1464,43 +1471,26 @@ def test_setting_drive_model_implicit(sim, num_articulations, device, drive_mode
     "condition",
     [
         {
-            "description": "Default Settings. No clipping should occur",
+            "description": "No constraint on effort. Test that no clipping is applied.",
             "effort_limit": torch.inf,
             "drive_model": ActuatorBaseCfg.DriveModelCfg(
                 speed_effort_gradient=0.0,
                 max_actuator_velocity=torch.inf,
                 velocity_dependent_resistance=0.0,
             ),
-            "velocity_state": 1.0,
-            "effort_state": 1.0,
-            "effort_requested": 1.0,
-            "expected_effort": 1.0,
+            "velocity_state": 0.0,
+            "effort_state": 0.0,
         },
         {
-            "description": "Default Settings",
-            "effort_limit": torch.inf,
+            "description": "Strictly effort limited. Test that effort is clipped at max effort.",
+            "effort_limit": 1.0,
             "drive_model": ActuatorBaseCfg.DriveModelCfg(
-                speed_effort_gradient=0.0,
-                max_actuator_velocity=torch.inf,
-                velocity_dependent_resistance=0.0,
+                speed_effort_gradient=1.0,
+                max_actuator_velocity=1.0,
+                velocity_dependent_resistance=1.0,
             ),
-            "velocity_state": 2.0,
-            "effort_state": 1.0,
-            "effort_requested": 1.0,
-            "expected_effort": 1.0,
-        },
-        {
-            "description": "Default Settings",
-            "effort_limit": 100.0,
-            "drive_model": ActuatorBaseCfg.DriveModelCfg(
-                speed_effort_gradient=100.0,
-                max_actuator_velocity=200.0,
-                velocity_dependent_resistance=0.1,
-            ),
-            "velocity_state": 3.0,
-            "effort_state": 1.0,
-            "effort_requested": 1.0,
-            "expected_effort": 1.0,
+            "velocity_state": 0.0,
+            "effort_state": 0.0,
         },
     ],
 )
@@ -1532,10 +1522,6 @@ def test_drive_model_constraints_implicit(sim, device, condition, gravity_enable
                 Pre step actuator velocity (rad/s).
             ``"effort_state"`` : float
                 Pre step actuator effort (Nm).
-            ``"effort_requested"`` : float
-                Drive effort requested at after step (Nm).
-            ``"expected_effort" : float
-                Drive effort expected post simulation step after the actuator constraints have been applied.
     """
     _test_drive_model_constraints_implicit(sim, device, **condition)
 
@@ -1548,58 +1534,76 @@ def _test_drive_model_constraints_implicit(
     drive_model,
     velocity_state,
     effort_state,
-    effort_requested,
-    expected_effort,
 ):
     print(f"Test Description: {description}")
     articulation_cfg = generate_articulation_cfg(
         articulation_type="single_joint_implicit",
         effort_limit_sim=effort_limit,
         drive_model=drive_model,
-        stiffness=0.0,  # Only consider the drive model impact on the applied impulse.
-        damping=0.0,
+        stiffness=2.0,  # Only consider the drive model impact on the applied impulse.
+        damping=1.0,
     )
     articulation, _ = generate_articulation(
         articulation_cfg=articulation_cfg,
         num_articulations=1,
         device=device,
     )
-    # Play sim
     sim.reset()
 
+    # Establish the articulation state
     physx = articulation.root_physx_view
+    dm = physx.get_dof_drive_model_properties()
+    maxf = physx.get_dof_max_forces()
+    print(f"drive model: {dm}, max forces: {maxf}")
     all_indices = torch.arange(physx.count, device=device)
     dof_velocities = velocity_state * torch.ones(physx.count * physx.max_dofs, dtype=torch.float32, device=device)
     physx.set_dof_velocities(dof_velocities, all_indices)
-    residual_effort = physx.get_dof_projected_joint_forces()
-    print(residual_effort)
-    dof_actuation_forces = effort_state * torch.ones(physx.count * physx.max_dofs, dtype=torch.float32, device=device)
-    dof_actuation_forces = dof_actuation_forces - residual_effort
-    physx.set_dof_actuation_forces(dof_actuation_forces, all_indices)
     sim.step()
+
+    pos = physx.get_dof_positions()
+    pos = (pos + 1)
+    pos = pos % (2 * torch.pi)
+    articulation.set_joint_position_target(pos, all_indices)
+    articulation.write_data_to_sim()
     mf = articulation.root_physx_view.get_dof_projected_joint_forces()
     mv = articulation.root_physx_view.get_dof_velocities()
-    print(mf)
-    print(mv)
+    ma = articulation.root_physx_view.get_dof_actuation_forces()
+   
+    for i in range(250):
+        sim.step()
+        pos = physx.get_dof_positions()
+        pos = (pos + 1)
+        pos = pos % (2 * torch.pi)
+        articulation.set_joint_position_target(pos, all_indices)
+        articulation.write_data_to_sim()
+        mf = articulation.root_physx_view.get_dof_projected_joint_forces()
+        mv = articulation.root_physx_view.get_dof_velocities()
+        ma = articulation.root_physx_view.get_dof_actuation_forces()
+        print(f"post-step {i} projected forces: {mf}, \nvelocity: {mv}")#, \nactuation forces: {ma}")
 
 
-#    dof_actuation_forces = effort_state*torch.ones(physx.count * physx.max_dofs, dtype=torch.float32, device=device)
+#    dof_actuation_forces = effort_requested * torch.ones((physx.count , physx.max_dofs), dtype=torch.float32, device=device)
+#
+#
+#
+#    dof_expected_forces = expected_effort * torch.ones((physx.count , physx.max_dofs), dtype=torch.float32, device=device)
 #    physx.set_dof_actuation_forces(dof_actuation_forces, all_indices)
 #    mf = articulation.root_physx_view.get_dof_projected_joint_forces()
 #    mv = articulation.root_physx_view.get_dof_velocities()
-#    print(mf)
-#    print(mv)
+#    ma = articulation.root_physx_view.get_dof_actuation_forces()
+#    print(f"pre-step projected forces: {mf}, \nvelocity: {mv}, \nactuation forces: {ma}")
 #    sim.step()
 #    mf = articulation.root_physx_view.get_dof_projected_joint_forces()
 #    mv = articulation.root_physx_view.get_dof_velocities()
-#    print(mf)
-#    print(mv)
+#    ma = articulation.root_physx_view.get_dof_actuation_forces()
+#    print(f"post-step projected forces: {mf}, \nvelocity: {mv}, \nactuation forces: {ma}")
+#    sim.step()
+#    mf = articulation.root_physx_view.get_dof_projected_joint_forces()
+#    mv = articulation.root_physx_view.get_dof_velocities()
+#    ma = articulation.root_physx_view.get_dof_actuation_forces()
+#    print(f"post-step projected forces: {mf}, \nvelocity: {mv}, \nactuation forces: {ma}")
+#    #torch.testing.assert_close(ma, dof_expected_forces)
 
-#    _initialize_condition()
-#    _establish_state()
-#    _apply_command()
-#    _step_simulation()
-#    _check_values()
 
 
 @pytest.mark.parametrize("num_articulations", [1, 2])
