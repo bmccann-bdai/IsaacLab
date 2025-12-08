@@ -94,14 +94,14 @@ def generate_articulation_cfg(
             # we set 80.0 default for max force because default in USD is 10e10 which makes testing annoying.
             spawn=sim_utils.UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Robots/IsaacSim/SimpleArticulation/revolute_articulation.usd",
-#                articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-#                    enabled_self_collisions=True,
-#                    solver_position_iteration_count=32,
-#                    solver_velocity_iteration_count=32,
-#                    sleep_threshold=0.005,
-#                    stabilization_threshold=0.001,
-#                ),
-#               joint_drive_props=sim_utils.JointDrivePropertiesCfg(max_effort=80.0, max_velocity=5.0),
+                #                articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                #                    enabled_self_collisions=True,
+                #                    solver_position_iteration_count=32,
+                #                    solver_velocity_iteration_count=32,
+                #                    sleep_threshold=0.005,
+                #                    stabilization_threshold=0.001,
+                #                ),
+                #               joint_drive_props=sim_utils.JointDrivePropertiesCfg(max_effort=80.0, max_velocity=5.0),
             ),
             actuators={
                 "joint": ImplicitActuatorCfg(
@@ -1561,25 +1561,25 @@ def _test_drive_model_constraints_implicit(
     sim.step()
 
     pos = physx.get_dof_positions()
-    pos = (pos + 1)
+    pos = pos + 1
     pos = pos % (2 * torch.pi)
     articulation.set_joint_position_target(pos, all_indices)
     articulation.write_data_to_sim()
     mf = articulation.root_physx_view.get_dof_projected_joint_forces()
     mv = articulation.root_physx_view.get_dof_velocities()
     ma = articulation.root_physx_view.get_dof_actuation_forces()
-   
+
     for i in range(250):
         sim.step()
         pos = physx.get_dof_positions()
-        pos = (pos + 1)
+        pos = pos + 1
         pos = pos % (2 * torch.pi)
         articulation.set_joint_position_target(pos, all_indices)
         articulation.write_data_to_sim()
         mf = articulation.root_physx_view.get_dof_projected_joint_forces()
         mv = articulation.root_physx_view.get_dof_velocities()
         ma = articulation.root_physx_view.get_dof_actuation_forces()
-        print(f"post-step {i} projected forces: {mf}, \nvelocity: {mv}")#, \nactuation forces: {ma}")
+        print(f"post-step {i} projected forces: {mf}, \nvelocity: {mv}")  # , \nactuation forces: {ma}")
 
 
 #    dof_actuation_forces = effort_requested * torch.ones((physx.count , physx.max_dofs), dtype=torch.float32, device=device)
@@ -1603,7 +1603,6 @@ def _test_drive_model_constraints_implicit(
 #    ma = articulation.root_physx_view.get_dof_actuation_forces()
 #    print(f"post-step projected forces: {mf}, \nvelocity: {mv}, \nactuation forces: {ma}")
 #    #torch.testing.assert_close(ma, dof_expected_forces)
-
 
 
 @pytest.mark.parametrize("num_articulations", [1, 2])
