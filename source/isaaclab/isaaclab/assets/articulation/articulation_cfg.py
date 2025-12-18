@@ -5,7 +5,8 @@
 
 from dataclasses import MISSING
 
-from isaaclab.actuators import ActuatorBaseCfg
+from isaaclab.actuators import ActuatorBaseCfg, actuator_pd
+from isaaclab.sim import JointDrivePropertiesCfg
 from isaaclab.utils import configclass
 
 from ..asset_base_cfg import AssetBaseCfg
@@ -69,3 +70,15 @@ class ArticulationCfg(AssetBaseCfg):
     actuator_value_resolution_debug_print = False
     """Print the resolution of actuator final value when input cfg is different from USD value, Defaults to False
     """
+
+    def __post_init__(self):
+        if self.actuators is not None:
+            if len(self.actuators.keys()) > 1:
+                for act_cfg in self.actuators.values():
+                    if act_cfg.class_type == actuator_pd.ImplicitActuator:
+                        if act_cfg.drive_model is not None:
+                            if hasattr(self.spawn, "joint_drive_props"):
+                                if self.spawn.joint_drive_props is not None:
+                                    self.spawn.joint_drive_props.enabled_physx_perf_env = True
+                                else:
+                                    self.spawn.joint_drive_props = JointDrivePropertiesCfg(enable_physx_perf_env=True)

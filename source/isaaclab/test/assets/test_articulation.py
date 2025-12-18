@@ -1492,6 +1492,17 @@ def test_setting_drive_model_implicit(sim, num_articulations, device, drive_mode
             "velocity_state": 0.0,
             "effort_state": 0.0,
         },
+        {
+            "description": "Effort and velocity limited. Test that effort is dependent on velocity.",
+            "effort_limit": 0.5,
+            "drive_model": ActuatorBaseCfg.DriveModelCfg(
+                speed_effort_gradient=0.0,
+                max_actuator_velocity=0.5,
+                velocity_dependent_resistance=0.0,
+            ),
+            "velocity_state": 0.0,
+            "effort_state": 0.0,
+        },
     ],
 )
 @pytest.mark.parametrize("device", ["cuda:0", "cpu"])
@@ -1539,8 +1550,10 @@ def _test_drive_model_constraints_implicit(
     articulation_cfg = generate_articulation_cfg(
         articulation_type="single_joint_implicit",
         effort_limit_sim=effort_limit,
+        velocity_limit_sim=1e10,
+        velocity_limit=1e10,
         drive_model=drive_model,
-        stiffness=2.0,  # Only consider the drive model impact on the applied impulse.
+        stiffness=1.0,
         damping=1.0,
     )
     articulation, _ = generate_articulation(
@@ -1550,11 +1563,40 @@ def _test_drive_model_constraints_implicit(
     )
     sim.reset()
 
+    #    from omni.physx.bindings._physx import (
+    #        PERF_ENV_API,
+    #        PERF_ENV_ATTR_MAX_ACTUATOR_VELOCITY_ANGULAR,
+    #        PERF_ENV_ATTR_VELOCITY_DEPENDENT_RESISTANCE_ANGULAR,
+    #        PERF_ENV_ATTR_SPEED_EFFORT_GRADIENT_ANGULAR,
+    #    )
+
+    #    prim_path='/World/Env_.*/Robot/Arm/RevoluteJoint'
+    #    from isaaclab.sim.utils import find_first_matching_prim
+    #    jointPrim = find_first_matching_prim(prim_path)
+
+    #    from pxr import UsdPhysics, Sdf
+    #    driveAPI = UsdPhysics.DriveAPI.Apply(jointPrim, UsdPhysics.Tokens.angular)
+    #    driveAPI.CreateMaxForceAttr().Set(effort_limit)
+
+    # Apply performance envelope API for the angular axis
+    #    perfEnvelopeAPI = jointPrim.ApplyAPI(
+    #        PERF_ENV_API, UsdPhysics.Tokens.angular)
+    #    jointPrim.CreateAttribute(PERF_ENV_ATTR_MAX_ACTUATOR_VELOCITY_ANGULAR,
+    # Sdf.ValueTypeNames.Float).Set(drive_model.max_actuator_velocity)
+    #    jointPrim.CreateAttribute(PERF_ENV_ATTR_VELOCITY_DEPENDENT_RESISTANCE_ANGULAR,
+    # Sdf.ValueTypeNames.Float).Set(drive_model.velocity_dependent_resistance)
+    #    jointPrim.CreateAttribute(PERF_ENV_ATTR_SPEED_EFFORT_GRADIENT_ANGULAR,
+    # Sdf.ValueTypeNames.Float).Set(drive_model.speed_effort_gradient)
+
     # Establish the articulation state
     physx = articulation.root_physx_view
+    #    act = articulation.actuators['joint']
+    #    articulation.write_joint_effort_limit_to_sim(act.effort_limit_sim)
+    #    articulation.write_joint_drive_model_to_sim(act.drive_model)
     dm = physx.get_dof_drive_model_properties()
     maxf = physx.get_dof_max_forces()
-    print(f"drive model: {dm}, max forces: {maxf}")
+    print(f"condition drive_model: {drive_model}, max forces: {effort_limit}")
+    print(f"physx values drive model: {dm}, max forces: {maxf}")
     all_indices = torch.arange(physx.count, device=device)
     dof_velocities = velocity_state * torch.ones(physx.count * physx.max_dofs, dtype=torch.float32, device=device)
     physx.set_dof_velocities(dof_velocities, all_indices)
@@ -1569,40 +1611,19 @@ def _test_drive_model_constraints_implicit(
     mv = articulation.root_physx_view.get_dof_velocities()
     ma = articulation.root_physx_view.get_dof_actuation_forces()
 
-    for i in range(250):
+    for i in range(500):
         sim.step()
         pos = physx.get_dof_positions()
         pos = pos + 1
         pos = pos % (2 * torch.pi)
         articulation.set_joint_position_target(pos, all_indices)
+        articulation.set_joint_velocity_target(0.0, all_indices)
         articulation.write_data_to_sim()
-        mf = articulation.root_physx_view.get_dof_projected_joint_forces()
-        mv = articulation.root_physx_view.get_dof_velocities()
-        ma = articulation.root_physx_view.get_dof_actuation_forces()
-        print(f"post-step {i} projected forces: {mf}, \nvelocity: {mv}")  # , \nactuation forces: {ma}")
-
-
-#    dof_actuation_forces = effort_requested * torch.ones((physx.count , physx.max_dofs), dtype=torch.float32, device=device)
-#
-#
-#
-#    dof_expected_forces = expected_effort * torch.ones((physx.count , physx.max_dofs), dtype=torch.float32, device=device)
-#    physx.set_dof_actuation_forces(dof_actuation_forces, all_indices)
-#    mf = articulation.root_physx_view.get_dof_projected_joint_forces()
-#    mv = articulation.root_physx_view.get_dof_velocities()
-#    ma = articulation.root_physx_view.get_dof_actuation_forces()
-#    print(f"pre-step projected forces: {mf}, \nvelocity: {mv}, \nactuation forces: {ma}")
-#    sim.step()
-#    mf = articulation.root_physx_view.get_dof_projected_joint_forces()
-#    mv = articulation.root_physx_view.get_dof_velocities()
-#    ma = articulation.root_physx_view.get_dof_actuation_forces()
-#    print(f"post-step projected forces: {mf}, \nvelocity: {mv}, \nactuation forces: {ma}")
-#    sim.step()
-#    mf = articulation.root_physx_view.get_dof_projected_joint_forces()
-#    mv = articulation.root_physx_view.get_dof_velocities()
-#    ma = articulation.root_physx_view.get_dof_actuation_forces()
-#    print(f"post-step projected forces: {mf}, \nvelocity: {mv}, \nactuation forces: {ma}")
-#    #torch.testing.assert_close(ma, dof_expected_forces)
+        if i % 5 == 0:
+            mf = articulation.root_physx_view.get_dof_projected_joint_forces()
+            mv = articulation.root_physx_view.get_dof_velocities()
+            ma = articulation.root_physx_view.get_dof_actuation_forces()
+            print(f"post-step {i} \nprojected forces: {mf}, \nvelocity: {mv} \nactuation forces: {ma}")
 
 
 @pytest.mark.parametrize("num_articulations", [1, 2])

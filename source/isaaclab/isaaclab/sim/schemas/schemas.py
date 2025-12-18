@@ -10,6 +10,7 @@ import logging
 import math
 
 import omni.physx.scripts.utils as physx_utils
+from omni.physx.bindings._physx import PERF_ENV_API
 from omni.physx.scripts import deformableUtils as deformable_utils
 from pxr import PhysxSchema, Usd, UsdPhysics
 
@@ -656,6 +657,9 @@ def modify_joint_drive_properties(
     for attr_name, attr_value in cfg.items():
         attr_name = cfg_to_usd_map.get(attr_name, attr_name)
         safe_set_attribute_on_usd_schema(usd_drive_api, attr_name, attr_value, camel_case=True)
+
+    if cfg["enable_physx_perf_env"]:
+        prim.ApplyAPI(PERF_ENV_API, UsdPhysics.Tokens.angular)
 
     return True
 
