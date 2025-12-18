@@ -1472,11 +1472,11 @@ def test_setting_drive_model_implicit(sim, num_articulations, device, drive_mode
     [
         {
             "description": "No constraint on effort. Test that no clipping is applied.",
-            "effort_limit": torch.inf,
+            "effort_limit": 1e5,
             "drive_model": ActuatorBaseCfg.DriveModelCfg(
-                speed_effort_gradient=0.0,
-                max_actuator_velocity=torch.inf,
-                velocity_dependent_resistance=0.0,
+                speed_effort_gradient=0,
+                max_actuator_velocity=1e5,
+                velocity_dependent_resistance=0,
             ),
             "velocity_state": 0.0,
             "effort_state": 0.0,
@@ -1496,9 +1496,9 @@ def test_setting_drive_model_implicit(sim, num_articulations, device, drive_mode
             "description": "Effort and velocity limited. Test that effort is dependent on velocity.",
             "effort_limit": 0.5,
             "drive_model": ActuatorBaseCfg.DriveModelCfg(
-                speed_effort_gradient=0.0,
+                speed_effort_gradient=1,
                 max_actuator_velocity=0.5,
-                velocity_dependent_resistance=0.0,
+                velocity_dependent_resistance=1,
             ),
             "velocity_state": 0.0,
             "effort_state": 0.0,
@@ -1550,8 +1550,6 @@ def _test_drive_model_constraints_implicit(
     articulation_cfg = generate_articulation_cfg(
         articulation_type="single_joint_implicit",
         effort_limit_sim=effort_limit,
-        velocity_limit_sim=1e10,
-        velocity_limit=1e10,
         drive_model=drive_model,
         stiffness=1.0,
         damping=1.0,
@@ -1563,36 +1561,8 @@ def _test_drive_model_constraints_implicit(
     )
     sim.reset()
 
-    #    from omni.physx.bindings._physx import (
-    #        PERF_ENV_API,
-    #        PERF_ENV_ATTR_MAX_ACTUATOR_VELOCITY_ANGULAR,
-    #        PERF_ENV_ATTR_VELOCITY_DEPENDENT_RESISTANCE_ANGULAR,
-    #        PERF_ENV_ATTR_SPEED_EFFORT_GRADIENT_ANGULAR,
-    #    )
-
-    #    prim_path='/World/Env_.*/Robot/Arm/RevoluteJoint'
-    #    from isaaclab.sim.utils import find_first_matching_prim
-    #    jointPrim = find_first_matching_prim(prim_path)
-
-    #    from pxr import UsdPhysics, Sdf
-    #    driveAPI = UsdPhysics.DriveAPI.Apply(jointPrim, UsdPhysics.Tokens.angular)
-    #    driveAPI.CreateMaxForceAttr().Set(effort_limit)
-
-    # Apply performance envelope API for the angular axis
-    #    perfEnvelopeAPI = jointPrim.ApplyAPI(
-    #        PERF_ENV_API, UsdPhysics.Tokens.angular)
-    #    jointPrim.CreateAttribute(PERF_ENV_ATTR_MAX_ACTUATOR_VELOCITY_ANGULAR,
-    # Sdf.ValueTypeNames.Float).Set(drive_model.max_actuator_velocity)
-    #    jointPrim.CreateAttribute(PERF_ENV_ATTR_VELOCITY_DEPENDENT_RESISTANCE_ANGULAR,
-    # Sdf.ValueTypeNames.Float).Set(drive_model.velocity_dependent_resistance)
-    #    jointPrim.CreateAttribute(PERF_ENV_ATTR_SPEED_EFFORT_GRADIENT_ANGULAR,
-    # Sdf.ValueTypeNames.Float).Set(drive_model.speed_effort_gradient)
-
     # Establish the articulation state
     physx = articulation.root_physx_view
-    #    act = articulation.actuators['joint']
-    #    articulation.write_joint_effort_limit_to_sim(act.effort_limit_sim)
-    #    articulation.write_joint_drive_model_to_sim(act.drive_model)
     dm = physx.get_dof_drive_model_properties()
     maxf = physx.get_dof_max_forces()
     print(f"condition drive_model: {drive_model}, max forces: {effort_limit}")
@@ -1609,7 +1579,6 @@ def _test_drive_model_constraints_implicit(
     articulation.write_data_to_sim()
     mf = articulation.root_physx_view.get_dof_projected_joint_forces()
     mv = articulation.root_physx_view.get_dof_velocities()
-    ma = articulation.root_physx_view.get_dof_actuation_forces()
 
     for i in range(500):
         sim.step()
@@ -1617,13 +1586,12 @@ def _test_drive_model_constraints_implicit(
         pos = pos + 1
         pos = pos % (2 * torch.pi)
         articulation.set_joint_position_target(pos, all_indices)
-        articulation.set_joint_velocity_target(0.0, all_indices)
+        articulation.set_joint_velocity_target(drive_model.max_actuator_velocity, all_indices)
         articulation.write_data_to_sim()
-        if i % 5 == 0:
+        if i % 1 == 0:
             mf = articulation.root_physx_view.get_dof_projected_joint_forces()
             mv = articulation.root_physx_view.get_dof_velocities()
-            ma = articulation.root_physx_view.get_dof_actuation_forces()
-            print(f"post-step {i} \nprojected forces: {mf}, \nvelocity: {mv} \nactuation forces: {ma}")
+            print(f"post step {i}: force {mf}, velocity {mv}")
 
 
 @pytest.mark.parametrize("num_articulations", [1, 2])

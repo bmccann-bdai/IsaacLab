@@ -1552,7 +1552,6 @@ class Articulation(AssetBase):
             first_env_root_prim_path = first_env_root_prims[0].GetPath().pathString
             root_prim_path_relative_to_prim_path = first_env_root_prim_path[len(first_env_matching_prim_path) :]
             root_prim_path_expr = self.cfg.prim_path + root_prim_path_relative_to_prim_path
-            print(root_prim_path_expr)
 
         # -- articulation
         self._root_physx_view = self._physics_sim_view.create_articulation_view(root_prim_path_expr.replace(".*", "*"))
